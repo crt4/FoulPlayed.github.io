@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<!--
+Evolution Viewer
+~ Get evolution and species data from a JSON file and display it intuitively
+to the user
+
+Commisioned by FlowPlay on GGn
+
+Author: Verminous
+-->
+<html>
+    <head>
+        <title>Evolution Viewer</title>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+        <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
+
+    </head>
+
+    <body>
+        <script type="text/javascript">
+            // Return the queries in the URL as an array
+            function getQueries() {
+                // Get query string
+                var query_str = window.location.search;
+                query_str = query_str.substring(1, query_str.length);
+                if (!query_str) {
+                    return false;
+                }
+                var raw_queries = query_str.split('&');
+                var queries = {};
+                for (i = 0; i < raw_queries.length; i++) {
+                    m = raw_queries[i].split('=');
+                    queries[m[0]] = m[1];
+                }
+                return queries;
+            }
+
+            // Get the existing query string minus the query 'unique_val'
+            function getUniqueQueries(unique_val) {
+                new_url = ""
+                var queries = getQueries();
+                $.each(queries, function (main_index, main_item) {
+                    if (main_index != unique_val) {
+                        console.log('running');
+                        new_url += '&' + main_index + '=' + main_item;
+                    }
+                });
+                console.log(new_url);
+                return new_url;
+            }
+
+            // If dropdown selected, change query string to dropdown value
+            function onSubmit(event) {
+                window.location.href = window.location.pathname + '?id=' +
+                        encodeURI($("#select").val()) + getUniqueQueries('id');
+            }
+            function onLevelsSubmit(event) {
+                window.location.href = window.location.pathname + '?levels=' +
+                        $("#levels").val() + getUniqueQueries('levels');
+            }
+
+            // Get the JSON file and return it parsed
+            function getData() {
+                var data;
+                var request = new XMLHttpRequest();
+                request.overrideMimeType("application/json");
+                request.onreadystatechange = function () {
+                    if (request.readyState == 4 && request.status == 200) {
+                        data = request.responseText;
+                    }
+                }
+                request.open("GET", "data.json", false);
+                request.send();
+                return jQuery.parseJSON(data);
+            }
+
+
+
+
+            function generateEvolutionTable(evolution, query, levels, index) {
+                var next = evolution[query];
+                if (index > levels - 1) {
+                    return;
+                }
+                $.each(next, function (main_index, main_item) {
+                    columns = '<td></td>';
+                    if (index > 0) {
+                        empty_columns = columns.repeat(index - 1);
+                        empty_columns = empty_columns + '<td class="arrow">⤷</td>';
+                    } else {
+                        empty_columns = '';
+                    }
+                    $('.evolutions.next table').append('<tr id="' + main_item.toLowerCase() + '">' + empty_columns + '<td><a href="index.html?id=' + main_item + getUniqueQueries('id') + '">' + main_item + '</a></td></tr>');
+                    // For each evolution, recursively print out the child
+                    // evolutions available
+                    generateEvolutionTable(evolution, main_item, levels, index + 1);
+                });
+            }
+
+            // Given the name of a species ('query') , the evolution tree 
+            // ('data'), and the species information ('info') output it all
+            // to the page
+            function showData(query, levels, evolutions, info) {
+                var next = evolutions[query];
+                // Loop through all evolution trees to find predecessors
+                var previous = [];
+                $.each(evolutions, function (main_index, main_item) {
+                    $.each(main_item, function (sub_index, sub_item) {
+                        if (sub_item == query) {
+                            previous.push(main_index);
+                        }
+                    })
+                })
+                // If no predecessors or sucessor show an error message
+                if (!next && previous.length == 0) {
+                    $('.message h3').text('No results found');
+                    $('.message').css('display', 'inline');
+                    return;
+                }
+                
+                // If exists, update the page title to show the species name
+                document.title = "Evolution Viewer | " + query;
+                
+                // Otherwise display the species evolution and general info
+                $('.evolutions table tbody').empty();
+                // Show previous evolutions
+                if (previous.length == 0) {
+                    $('.evolutions.previous table tbody').append('<tr><td><a><i>No predecessors found</i></a></td></tr>');
+                } else {
+                    $.each(previous, function (main_index, main_item) {
+                        $('.evolutions.previous table tbody').append('<tr><td><a href="?id=' + main_item + getUniqueQueries('id') + '">' + main_item + '</a></td></tr>');
+                    });
+                }
+                // Show current evolution name
+                $('.current_species h1').text(query);
+                // Show current evolution information
+                $.each(info[query], function (main_index, main_item) {
+                    $('.current_species .details tbody').append('<tr><th>' + main_index + '</th><td>' + main_item + '</td></tr>');
+                })
+                // Use recursion to generate out the successive evolution table
+                if (!next) {
+                    $('.evolutions.next table tbody').append('<tr><td><a><i>No successors found</i></a></td></tr>');
+                } else {
+                    generateEvolutionTable(evolutions, query, levels, 0);
+                }
+
+                // Hide the error message and show the results
+                $('.message').css('display', 'none');
+                $('#container').css('display', 'inline');
+            }
+            function generateAllSpeciesNames(evolutions, info) {
+                var names = [];
+                $.each(evolutions, function (main_index, main_item) {
+                    names.push(main_index);
+                    $.each(main_item, function (sub_index, sub_item) {
+                        names.push(sub_item);
+                    });
+                });
+                $.each(info, function (main_index, main_item) {
+                    names.push(main_index);
+                });
+                // Remove duplicates
+                names = Array.from(new Set(names));
+                names.sort();
+                return names;
+            }
+            function removeElement(array, item) {
+                const index = array.indexOf(item);
+                if (index != -1) {
+                    array.splice(index, 1);
+                }
+            }
+
+            $(document).ready(function () {
+                var data = getData();
+                var info = data['information'];
+                var evolutions = data['evolutions'];
+                var evolutionary_levels = data['evolutionary_levels'];
+
+                // Generate dropdown options
+                var names = generateAllSpeciesNames(evolutions, info);
+                console.log(names);
+                console.log(names.length)
+                // For each evolutionary level present in the JSON file
+                // check if the species exist ~ if so, group it with others from
+                // that level. If not, display in 'Other' category at the end
+                $.each(evolutionary_levels, function (main_index, main_item) {
+                    $('#select').append('<option disabled="true" value="' + main_index + '">~ ' + main_index + ' ~</option>');
+                    var temp = [];
+                    $.each(main_item, function (sub_index, sub_item) {
+                        // Only show species present outside of
+                        // evolutionary_levels array
+                        if ($.inArray(sub_item, names) != -1) {
+                            temp.push(sub_item);
+                            // Species in group, remove from 'Others' array
+                            removeElement(names, sub_item);
+                        }
+                        ;
+                    });
+                    // Sort the array alphabetically
+                    temp.sort();
+                    $.each(temp, function (main_index, main_item) {
+                        $('#select').append('<option value="' + main_item + '">' + main_item + '</option>');
+                    });
+                });
+                // Generate out the remaining 'Others' species
+                $('#select').append('<option disabled="true" value="~ Other ~">~ Other ~</option>')
+                $.each(names, function (main_index, main_item) {
+                    $('#select').append('<option value="' + main_item + '">' + main_item + '</option>');
+                });
+
+                // If no query exists in the URL (no search has been made) show
+                // an error message
+                var queries = getQueries();
+                console.log(queries);
+                if (!queries['id']) {
+                    $('.message h3').text('Use the search bar above to begin :)');
+                    $('.message').css('display', 'inline');
+                } else {
+                    if (queries['levels']) {
+                        $("#levels").val(queries['levels']);
+                    }
+                    // Otherwise show the data
+                    showData(decodeURI(queries['id']), queries['levels'], evolutions, info)
+                }
+            });
+        </script>
+
+        <!-- It's all basic HTML from here on down -->
+        <style>
+            .current_species table th {
+                padding-right: 25px;
+                text-align: left;
+            }
+            .evolutions table {
+                border-collapse: collapse;
+            }
+            .evolutions table td.arrow {
+                font-weight: bold;
+                padding-right: 10px;
+                text-align: right;
+            }
+        </style>
+
+        <select id="select" onchange="onSubmit()">
+            <option selected="selected" disabled="true" value="">Select a species</option>
+        </select>
+
+        <hr>
+        <div class="message" style="display: none">
+            <h3></h3>
+        </div>
+        <div id="container" style="display: none">
+            <div class="evolutions previous">
+                <h3>Evolves from</h3>
+                <table>
+                    <tbody>
+                    </tbody>
+                </table>
+
+            </div>
+            <div class="current_species">
+                <h1>SPECIES NAME</h1>
+                <table class="details">
+                    <tbody>
+
+                    </tbody>
+                </table>
+            </div>
+            <br>
+            <div class="evolutions next">
+                <h3>Evolves to</h3>
+                <span>Levels to show</span>
+                <select id="levels" onchange="onLevelsSubmit()" style="margin-bottom:25px;">
+                    <option selected="selected" disabled="true" value=""></option>
+                    <option value="1">1</option>
+                    <option value="2">2</option>
+                    <option value="3">3</option>
+                    <option value="4">4</option>
+                    <option value="5">5</option>
+                    <option value="6">6</option>
+                    <option value="7">7</option>
+                    <option value="8">8</option>
+                    <option value="9">9</option>
+                    <option value="10">10</option>
+                </select>
+                <table>
+                    <tbody>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </body>
+</html>
